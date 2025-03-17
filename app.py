@@ -23,7 +23,6 @@ st.sidebar.title("Filters")
 # Region Filter
 all_regions = sorted(df_original["Region"].dropna().unique())
 selected_region = st.sidebar.selectbox("Select Region", options=["All"] + all_regions)
-
 if selected_region != "All":
     df_filtered_region = df_original[df_original["Region"] == selected_region]
 else:
@@ -32,7 +31,6 @@ else:
 # State Filter
 all_states = sorted(df_filtered_region["State"].dropna().unique())
 selected_state = st.sidebar.selectbox("Select State", options=["All"] + all_states)
-
 if selected_state != "All":
     df_filtered_state = df_filtered_region[df_filtered_region["State"] == selected_state]
 else:
@@ -41,7 +39,6 @@ else:
 # Category Filter
 all_categories = sorted(df_filtered_state["Category"].dropna().unique())
 selected_category = st.sidebar.selectbox("Select Category", options=["All"] + all_categories)
-
 if selected_category != "All":
     df_filtered_category = df_filtered_state[df_filtered_state["Category"] == selected_category]
 else:
@@ -167,7 +164,7 @@ with kpi_col4:
     )
 
 # ---- KPI Selection (Affects All Charts) ----
-st.subheader("Visualize KPI Across Time, Region, & Top Products")
+st.subheader("Visualize KPI Across Time, Region, State, & Top Products")
 
 if df_current.empty:
     st.warning("No data available for the selected filters and date range.")
@@ -218,6 +215,31 @@ else:
     fig_region.update_layout(height=400, yaxis={"categoryorder": "total ascending"})
     st.plotly_chart(fig_region, use_container_width=True)
 
+    # ---- Top 10 States by Selected KPI ----
+    st.subheader(f"Top 10 States by {selected_kpi}")
+    state_grouped = df_current.groupby("State").agg({
+        "Sales": "sum",
+        "Quantity": "sum",
+        "Profit": "sum"
+    }).reset_index()
+    state_grouped["Margin Rate"] = state_grouped["Profit"] / state_grouped["Sales"].replace(0, 1)
+    state_grouped.sort_values(by=selected_kpi, ascending=False, inplace=True)
+    top_10_states = state_grouped.head(10)
+
+    fig_states = px.bar(
+        top_10_states,
+        x=selected_kpi,
+        y="State",
+        orientation="h",
+        title=f"Top 10 States by {selected_kpi}",
+        labels={selected_kpi: selected_kpi, "State": "State"},
+        color=selected_kpi,
+        color_continuous_scale="Blues",
+        template="plotly_white",
+    )
+    fig_states.update_layout(height=400, yaxis={"categoryorder": "total ascending"})
+    st.plotly_chart(fig_states, use_container_width=True)
+
     # ---- Top 10 Products by Selected KPI ----
     st.subheader(f"Top 10 Products by {selected_kpi}")
     product_grouped = df_current.groupby("Product Name").agg({
@@ -227,10 +249,10 @@ else:
     }).reset_index()
     product_grouped["Margin Rate"] = product_grouped["Profit"] / product_grouped["Sales"].replace(0, 1)
     product_grouped.sort_values(by=selected_kpi, ascending=False, inplace=True)
-    top_10 = product_grouped.head(10)
+    top_10_products = product_grouped.head(10)
 
     fig_top10 = px.bar(
-        top_10,
+        top_10_products,
         x=selected_kpi,
         y="Product Name",
         orientation="h",
