@@ -65,20 +65,14 @@ df_current = df_filtered[
     (df_filtered["Order Date"] <= pd.to_datetime(to_date))
 ]
 
-# ---- Compute a Previous Period for Comparison ----
-# Calculate the number of days in the current selection
+# ---- Compute Previous Period for Comparison ----
 selected_days = (pd.to_datetime(to_date) - pd.to_datetime(from_date)).days + 1
-# Define the previous period as the same length of time immediately before the current period
 prev_from_date = pd.to_datetime(from_date) - timedelta(days=selected_days)
 prev_to_date = pd.to_datetime(from_date) - timedelta(days=1)
-
 df_previous = df_filtered[
     (df_filtered["Order Date"] >= prev_from_date) &
     (df_filtered["Order Date"] <= prev_to_date)
 ]
-
-# ---- Page Title ----
-st.title("SuperStore KPI Dashboard")
 
 # ---- Calculate Current & Previous Metrics ----
 def safe_sum(df, col):
@@ -94,11 +88,13 @@ previous_quantity = safe_sum(df_previous, "Quantity")
 previous_profit = safe_sum(df_previous, "Profit")
 previous_margin = (previous_profit / previous_sales) if previous_sales != 0 else 0
 
-# Calculate deltas (absolute differences)
 sales_delta = current_sales - previous_sales
 quantity_delta = current_quantity - previous_quantity
 profit_delta = current_profit - previous_profit
-margin_delta = (current_margin - previous_margin) * 100  # difference in margin points
+margin_delta = (current_margin - previous_margin) * 100  # in percentage points
+
+# ---- Page Title ----
+st.title("SuperStore KPI Dashboard")
 
 # ---- Custom CSS for KPI Tiles ----
 st.markdown(
@@ -123,97 +119,141 @@ st.markdown(
         font-size: 24px;
         color: #1E90FF;
     }
+    .kpi-delta {
+        font-size: 14px;
+        color: #555555;
+        margin-top: 4px;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# ---- KPI Display (Rectangles) with Deltas ----
+# ---- KPI Display (Boxes with Delta Indicators) ----
 kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
-
 with kpi_col1:
-    # Sales
-    if df_previous.empty:
-        st.metric("Sales", f"${current_sales:,.2f}")
-    else:
-        st.metric("Sales", f"${current_sales:,.2f}", f"${sales_delta:,.2f}")
-
+    st.markdown(
+        f"""
+        <div class='kpi-box'>
+            <div class='kpi-title'>Sales</div>
+            <div class='kpi-value'>${current_sales:,.2f}</div>
+            <div class='kpi-delta'>Change: ${sales_delta:,.2f}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 with kpi_col2:
-    # Quantity Sold
-    if df_previous.empty:
-        st.metric("Quantity Sold", f"{current_quantity:,.0f}")
-    else:
-        st.metric("Quantity Sold", f"{current_quantity:,.0f}", f"{quantity_delta:,.0f}")
-
+    st.markdown(
+        f"""
+        <div class='kpi-box'>
+            <div class='kpi-title'>Quantity Sold</div>
+            <div class='kpi-value'>{current_quantity:,.0f}</div>
+            <div class='kpi-delta'>Change: {quantity_delta:,.0f}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 with kpi_col3:
-    # Profit
-    if df_previous.empty:
-        st.metric("Profit", f"${current_profit:,.2f}")
-    else:
-        st.metric("Profit", f"${current_profit:,.2f}", f"${profit_delta:,.2f}")
-
+    st.markdown(
+        f"""
+        <div class='kpi-box'>
+            <div class='kpi-title'>Profit</div>
+            <div class='kpi-value'>${current_profit:,.2f}</div>
+            <div class='kpi-delta'>Change: ${profit_delta:,.2f}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 with kpi_col4:
-    # Margin Rate
-    if df_previous.empty:
-        st.metric("Margin Rate", f"{(current_margin * 100):,.2f}%")
+    st.markdown(
+        f"""
+        <div class='kpi-box'>
+            <div class='kpi-title'>Margin Rate</div>
+            <div class='kpi-value'>{(current_margin * 100):,.2f}%</div>
+            <div class='kpi-delta'>Change: {margin_delta:,.2f}%</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# ---- KPI Toggle for Charts ----
+st.subheader("Visualize KPI Across Time, Categories, & Top Products")
+kpi_options = ["Sales", "Quantity", "Profit", "Margin Rate"]
+selected_kpi = st.radio("Select KPI to display:", options=kpi_options, horizontal=True)
+
+# ---- Chart Type Toggle for Time Series ----
+chart_type = st.radio("Select Chart Type for Time Series", options=["Line Chart", "Area Chart"], horizontal=True)
+
+# ---- Time Series Chart for Selected KPI ----
+if df_current.empty:
+    st.warning("No data available for the selected filters and date range.")
+else:
+    daily_grouped = df_current.groupby("Order Date").agg({
+        "Sales": "sum",
+        "Quantity": "sum",
+        "Profit": "sum"
+    }).reset_index()
+    daily_grouped["Margin Rate"] = daily_grouped["Profit"] / daily_grouped["Sales"].replace(0, 1)
+    
+    if chart_type == "Line Chart":
+        fig_time = px.line(
+            daily_grouped,
+            x="Order Date",
+            y=selected_kpi,
+            title=f"{selected_kpi} Over Time",
+            labels={"Order Date": "Date", selected_kpi: selected_kpi},
+            template="plotly_white",
+        )
     else:
-        st.metric("Margin Rate", f"{(current_margin * 100):,.2f}%", f"{margin_delta:,.2f}%")
+        fig_time = px.area(
+            daily_grouped,
+            x="Order Date",
+            y=selected_kpi,
+            title=f"{selected_kpi} Over Time",
+            labels={"Order Date": "Date", selected_kpi: selected_kpi},
+            template="plotly_white",
+        )
+    fig_time.update_layout(height=400)
+    st.plotly_chart(fig_time, use_container_width=True)
 
-# ---- Sales Over Time (Line Chart) ----
-st.subheader("Sales Over Time")
+# ---- Category Breakdown Chart for Selected KPI (Histogram) ----
 if df_current.empty:
     st.warning("No data available for the selected filters and date range.")
 else:
-    daily_grouped = df_current.groupby("Order Date").agg({"Sales": "sum"}).reset_index()
-    fig_line = px.line(
-        daily_grouped,
-        x="Order Date",
-        y="Sales",
-        title="Sales Over Time",
-        labels={"Order Date": "Date", "Sales": "Sales"},
+    category_grouped = df_current.groupby("Category").agg({
+        "Sales": "sum",
+        "Quantity": "sum",
+        "Profit": "sum"
+    }).reset_index()
+    category_grouped["Margin Rate"] = category_grouped["Profit"] / category_grouped["Sales"].replace(0, 1)
+    
+    fig_category = px.bar(
+        category_grouped,
+        x="Category",
+        y=selected_kpi,
+        title=f"{selected_kpi} by Category",
+        labels={"Category": "Category", selected_kpi: selected_kpi},
         template="plotly_white",
+        color="Category"
     )
-    fig_line.update_layout(height=400)
-    st.plotly_chart(fig_line, use_container_width=True)
-
-# ---- Category & Sub-Category Distribution (Sunburst Chart) ----
-st.subheader("Category & Sub-Category Sales Distribution")
-if df_current.empty:
-    st.warning("No data available for the selected filters and date range.")
-else:
-    fig_sunburst = px.sunburst(
-        df_current,
-        path=["Category", "Sub-Category"],
-        values="Sales",
-        title="Category & Sub-Category Breakdown",
-        template="plotly_white",
-        color="Category",
-        color_discrete_sequence=px.colors.qualitative.Set2
-    )
-    fig_sunburst.update_layout(margin=dict(t=50, l=25, r=25, b=25))
-    st.plotly_chart(fig_sunburst, use_container_width=True)
+    fig_category.update_layout(height=400)
+    st.plotly_chart(fig_category, use_container_width=True)
 
 # ---- Top 10 Products by Selected KPI ----
-st.subheader("Top 10 Products by Selected KPI")
+st.subheader(f"Top 10 Products by {selected_kpi}")
 if df_current.empty:
     st.warning("No data available for the selected filters and date range.")
 else:
-    kpi_options = ["Sales", "Quantity", "Profit", "Margin Rate"]
-    selected_kpi = st.radio("Select KPI to display:", options=kpi_options, horizontal=True)
-
     product_grouped = df_current.groupby("Product Name").agg({
         "Sales": "sum",
         "Quantity": "sum",
         "Profit": "sum"
     }).reset_index()
-
-    # Calculate margin rate for each product
     product_grouped["Margin Rate"] = product_grouped["Profit"] / product_grouped["Sales"].replace(0, 1)
     product_grouped.sort_values(by=selected_kpi, ascending=False, inplace=True)
     top_10 = product_grouped.head(10)
-
-    # Bar Chart
-    fig_bar = px.bar(
+    
+    fig_top10 = px.bar(
         top_10,
         x=selected_kpi,
         y="Product Name",
@@ -224,8 +264,5 @@ else:
         color_continuous_scale="Blues",
         template="plotly_white",
     )
-    fig_bar.update_layout(
-        height=400,
-        yaxis={"categoryorder": "total ascending"}
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    fig_top10.update_layout(height=400, yaxis={"categoryorder": "total ascending"})
+    st.plotly_chart(fig_top10, use_container_width=True)
